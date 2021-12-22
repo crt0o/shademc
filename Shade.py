@@ -1,6 +1,5 @@
 # Networking
 import socket
-from threading import Thread
 
 # Parsing
 from io import BytesIO
@@ -8,11 +7,16 @@ from io import BytesIO
 # Cryptography stuff
 import zlib
 import hashlib
+from Crypto.Cipher import PKCS1_v1_5
+from Crypto.Cipher import AES
+from Crypto.PublicKey import RSA
+import secrets
 
 # Miscellaneous
 from enum import Enum
 import time
 import json
+from threading import Thread
 
 # --- Error classes ---
 
@@ -110,6 +114,21 @@ class ClientStatusServerboundPacket(ServerboundPacket):
 
         self.message = self._generate_message_metadata(self.packet_id, action_id_bytes)
 
+class EncryptionServerboundPacket(ServerboundPacket):
+    def __init__(self, shared_secret, verify_token):
+        self.packet_id = 0x01
+        self.next_state = State.LOGIN
+        self.shared_secret = shared_secret
+        self.verify_token = verify_token
+    
+    def generate_message(self):
+        shared_secret_bytes = encode_bytes(self.shared_secret)
+        verify_token_bytes = encode_bytes(self.verify_token)
+
+        payload = shared_secret_bytes + verify_token_bytes
+
+        self.message = self._generate_message_metadata(self.packet_id, payload)
+
 # --- ClientboundPacket classes ---
 
 class ClientboundPacket:
@@ -202,11 +221,14 @@ def encode_varint(n):
         b += byte(n & 0x7f | 0x80)
         n >>= 7
 
-def decode_varint_stream(stream, stream_type=StreamType.BYTESIO):
+def decode_varint_stream(stream, cipher=None):
     shift = 0
     result = 0
     while True:
-        i = read(stream, stream_type, 1)
+        if cipher:
+            i = cipher.decrypt(read(stream, 1))
+        else:
+            i = read(stream, 1)
         if not i: return
         result |= (i[0] & 0x7f) << shift
         shift += 7
@@ -218,18 +240,23 @@ def decode_varint_stream(stream, stream_type=StreamType.BYTESIO):
 def encode_string(s):
     return encode_varint(len(s)) + bytes(s, encoding='utf-8')
 
-def decode_string_stream(stream, stream_type=StreamType.BYTESIO):
-    return str(decode_bytes_stream(stream, stream_type), encoding='utf-8')
-    
-def decode_bytes_stream(stream, stream_type=StreamType.BYTESIO):
-    length = decode_varint_stream(stream, stream_type)
-    return read(stream, stream_type, length)
+def decode_string_stream(stream):
+    return str(decode_bytes_stream(stream), encoding='utf-8')
 
-def read(stream, stream_type, n):
-    if stream_type == StreamType.SOCKET:
+def encode_bytes(bytes_):
+    return encode_varint(len(bytes_)) + bytes_
+
+def decode_bytes_stream(stream):
+    length = decode_varint_stream(stream)
+    return read(stream, length)
+
+def read(stream, n):
+    if isinstance(stream, socket.socket):
         return stream.recv(n)
-    else:
+    elif isinstance(stream, BytesIO):
         return stream.read(n)
+    else:
+        raise TypeError('Invalid stream type')
 
 def read_all(stream):
     data = bytes()
@@ -294,7 +321,11 @@ class Shade:
             if self.recieve_thread_exit: exit()
 
             # Try to recieve the length of the packet
-            payload_length = decode_varint_stream(self.s, StreamType.SOCKET)
+            if self.encryption_on:
+                cipher = AES.new(self.shared_secret, AES.MODE_CFB, iv=self.shared_secret)
+                payload_length = decode_varint_stream(self.s, cipher=cipher)
+            else:
+                payload_length = decode_varint_stream(self.s)
 
             # If reading fails, continue
             if not payload_length: continue
@@ -312,8 +343,11 @@ class Shade:
                 if len(data) == payload_length:
                     break
 
-            # Decompress the packet if it is compressed
+            # Decrypt packet body if it is encrypted
+            if self.encryption_on:
+                data = cipher.decrypt(data)
 
+            # Decompress the packet if it is compressed
             if self.compression_on:
                 stream = BytesIO(data)
                 uncompressed_length = decode_varint_stream(stream)
@@ -324,10 +358,25 @@ class Shade:
                 else:
                     data = read_all(stream)
 
-
             # Instantiate a BytesIO object with the packet data and parse out the packet id
             stream = BytesIO(data)
             packet_id = decode_varint_stream(stream)
+
+            # Handle encryption request packets
+            if packet_id == 0x01 and self.state == State.LOGIN:
+                packet = EncryptionClientboundPacket.from_payload_stream(stream)
+
+                cipher = PKCS1_v1_5.new(RSA.importKey(packet.public_key))
+
+                self.shared_secret = secrets.token_bytes(16)
+
+                encrypted_shared_secret = cipher.encrypt(self.shared_secret)
+                encrypted_verify_token = cipher.encrypt(packet.verify_token)
+                
+                self.send(EncryptionServerboundPacket(encrypted_shared_secret, encrypted_verify_token))
+
+                self.encryption_on = True
+                continue
 
             # Handle set compression packets
             if packet_id == 0x03 and self.state == State.LOGIN:
@@ -339,8 +388,7 @@ class Shade:
             elif packet_id == 0x21:
                 id_bytes = read_all(stream)
                 self.send(KeepAliveServerboundPacket(id_bytes))
-                continue
-                
+                continue   
 
             # Instantiate a ClientboundPacket and pass it to the handle_packet function
             try:
@@ -361,6 +409,7 @@ class Shade:
         self.s.connect((self.host, self.port))
 
         self.compression_on = False
+        self.encryption_on = False
 
         self.recieve_thread_exit = False
         self.recieve_thread = Thread(target=self._recieve)
@@ -370,7 +419,7 @@ class Shade:
         self.send(HandshakeServerboundPacket(host=self.host, next_state=0x02))
         self.send(LoginServerboundPacket(username))
         time.sleep(0.2)
-        self.send(ClientStatusServerboundPacket(0))
+        # self.send(ClientStatusServerboundPacket(0))
 
     def on_packet(self, fun):
         self.handle_packet = fun
@@ -381,5 +430,11 @@ class Shade:
 
     def send(self, packet):
         packet.generate_message()
-        self.s.sendall(self._generate_packet_header(packet.message))
+        packet_bytes = self._generate_packet_header(packet.message)
+        
+        if self.encryption_on:
+            cipher = AES.new(self.shared_secret, AES.MODE_CFB, iv=self.shared_secret)
+            packet_bytes = cipher.encrypt(packet_bytes)
+
+        self.s.sendall(packet_bytes)
         self.state = packet.next_state
