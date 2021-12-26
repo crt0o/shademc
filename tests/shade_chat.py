@@ -1,9 +1,11 @@
-import Shade
 from threading import Thread
+from shademc import Shade
+from shademc.ClientboundPacket import ChatClientboundPacket
+from shademc.ServerboundPacket import ChatServerboundPacket
 
 def tty():
     while True:
-        client.send(Shade.ChatServerboundPacket(input()))
+        client.send(ChatServerboundPacket(input()))
 
 server = input('Connect to: ')
 username = input('Use username: ')
@@ -15,14 +17,13 @@ client.login(username)
 Thread(target=tty).start()
 
 def handle_packet(packet):
-    if isinstance(packet, Shade.ChatClientboundPacket):
+    if isinstance(packet, ChatClientboundPacket):
         if packet.type == 0:
             print(packet.contents)
-            # print('<' + packet.contents['with'][0]['text'] + '> ' + packet.contents['with'][1])
 
         if packet.type == 1:
             try:
-                print('<Server>', packet.contents)
+                print(packet.contents)
             except:
                 pass
 
