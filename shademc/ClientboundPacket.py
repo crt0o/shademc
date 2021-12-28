@@ -4,13 +4,15 @@ from shademc.utility import decode_varint_stream, decode_bytes_stream, decode_st
 # Miscellaneous
 import json
 
+
 class ClientboundPacket:
     pass
+
 
 class StatusClientboundPacket(ClientboundPacket):
     def __init__(self, info):
         self.packet_id = 0x00
-        self.info
+        self.info = json.loads(info.decode('utf-8'))
         self.next_state = State.STATUS
 
     @classmethod 
@@ -18,6 +20,7 @@ class StatusClientboundPacket(ClientboundPacket):
         info = json.loads(decode_string_stream(payload_stream))
 
         return cls(info)
+
 
 class SetCompressionClientboundPacket(ClientboundPacket):
     def __init__(self, threshold):
@@ -30,6 +33,7 @@ class SetCompressionClientboundPacket(ClientboundPacket):
         threshold = decode_varint_stream(payload_stream)
 
         return cls(threshold)
+
 
 class EncryptionClientboundPacket(ClientboundPacket):
     def __init__(self, server_id, public_key, verify_token):
@@ -48,6 +52,7 @@ class EncryptionClientboundPacket(ClientboundPacket):
 
         return cls(server_id, public_key, verify_token)
 
+
 class LoginSuccessClientboundPacket(ClientboundPacket):
     def __init__(self, uuid, username):
         self.packet_id = 0x02
@@ -62,6 +67,7 @@ class LoginSuccessClientboundPacket(ClientboundPacket):
         username = decode_string_stream(payload_stream)
 
         return cls(uuid, username)
+
 
 class ChatClientboundPacket(ClientboundPacket):
     def __init__(self, contents, type_, sender):
@@ -79,6 +85,7 @@ class ChatClientboundPacket(ClientboundPacket):
         sender = payload_stream.read(16)
 
         return cls(contents, type_, sender)
+
 
 class KeepAliveClientBoundPacket(ClientboundPacket):
     def __init__(self, keep_alive_id: bytes):

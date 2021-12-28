@@ -9,12 +9,13 @@ from shademc.utility import decode_varint_stream, State, encode_varint
 
 # Packets
 from shademc.ClientboundPacket import EncryptionClientboundPacket, KeepAliveClientBoundPacket, SetCompressionClientboundPacket
-from shademc.ServerboundPacket import EncryptionServerboundPacket, KeepAliveServerboundPacket, HandshakeServerboundPacket, ServerboundPacket, StatusServerboundPacket, LoginServerboundPacket
+from shademc.ServerboundPacket import EncryptionServerboundPacket, KeepAliveServerboundPacket, HandshakeServerboundPacket, LoginServerboundPacket
 from shademc.PACKET_TYPES import PACKET_TYPES
 
 # Miscellaneous
 from io import BytesIO
 from typing import Callable
+
 
 class Shade:
     def __init__(self, host: str, port=25565, buffer_size=1024, keep_alive=True):
@@ -69,11 +70,11 @@ class Shade:
         self.relayer = Relayer(self.host, self.port)
         self.relayer.on_packet(self._handle_packet)
 
-    def login(self, username, password=None) -> None:
+    def login(self, username) -> None:
         self.send(HandshakeServerboundPacket(host=self.host, next_state=0x02))
         self.send(LoginServerboundPacket(username))
 
-    def get_relayer(self) -> Relayer:
+    def get_relayer(self) -> Relayer | None:
         if hasattr(self, 'relayer'):
             return self.relayer
         else: return None
@@ -86,6 +87,8 @@ class Shade:
 
         self.state = packet.next_state
 
+        return data
+
     def on_packet(self, func: Callable) -> None:
         self._packet_handler = func
 
@@ -97,4 +100,3 @@ class Shade:
     @staticmethod
     def generate_data(packet) -> bytes:
         return encode_varint(packet.packet_id) + packet.payload
-

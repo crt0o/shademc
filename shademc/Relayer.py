@@ -13,6 +13,7 @@ from io import BytesIO
 from threading import Thread
 from typing import Callable
 
+
 class Relayer:
     def __init__(self, host, port, buffer_size=1024):
         self._encryption_on = False
@@ -24,21 +25,21 @@ class Relayer:
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.s.connect((host, port))
 
-        self._recieve_thread = Thread(target=self._recieve)
-        self._recieve_thread.start()
+        self._receive_thread = Thread(target=self._receive)
+        self._receive_thread.start()
 
         self.active = True
 
     # --- Private methods ---
 
-    def _recieve(self) -> None:
+    def _receive(self) -> None:
         while True:
             # Exit if the exit flag is set to True
             if self.exit_flag:
                 self.s.close()
                 exit()
 
-            # Try to recieve the length of the packet
+            # Try to receive the length of the packet
             if self._encryption_on:
                 cipher = AES.new(self._key, AES.MODE_CFB, iv=self._key)
                 payload_length = decode_varint_stream(self.s, cipher=cipher)
@@ -48,7 +49,7 @@ class Relayer:
             # If reading fails, continue
             if not payload_length: continue
 
-            # Recieve the entire packet
+            # Receive the entire packet
             data = bytes()
 
             while True:
@@ -102,7 +103,7 @@ class Relayer:
     def on_packet(self, func: Callable) -> None:
         self._packet_handler = func
 
-    def send(self, data: bytes) -> bytes:
+    def send(self, data: bytes) -> bytes | None:
         if not self.active: return
 
         data_length_bytes = encode_varint(data_length := len(data))

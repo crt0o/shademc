@@ -1,0 +1,12 @@
+setup.py
+shademc/ClientboundPacket.py
+shademc/PACKET_TYPES.py
+shademc/Relayer.py
+shademc/ServerboundPacket.py
+shademc/Shade.py
+shademc/utility.py
+shademc.egg-info/PKG-INFO
+shademc.egg-info/SOURCES.txt
+shademc.egg-info/dependency_links.txt
+shademc.egg-info/requires.txt
+shademc.egg-info/top_level.txt

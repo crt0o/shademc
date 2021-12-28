@@ -10,8 +10,10 @@ from enum import Enum
 
 # --- Functions ---
 
+
 def byte(n: int) -> bytes:
     return bytes((n, ))
+
 
 def encode_varint(n: int) -> bytes:
     b = bytes()
@@ -22,7 +24,8 @@ def encode_varint(n: int) -> bytes:
         b += byte(n & 0x7f | 0x80)
         n >>= 7
 
-def decode_varint_stream(stream, cipher=None) -> int:
+
+def decode_varint_stream(stream, cipher=None) -> int | None:
     shift = 0
     result = 0
     while True:
@@ -38,18 +41,23 @@ def decode_varint_stream(stream, cipher=None) -> int:
 
     return result
 
+
 def encode_string(s: str) -> bytes:
     return encode_varint(len(s)) + bytes(s, encoding='utf-8')
+
 
 def decode_string_stream(stream) -> str:
     return str(decode_bytes_stream(stream), encoding='utf-8')
 
+
 def encode_bytes(bytes_: bytes) -> bytes:
     return encode_varint(len(bytes_)) + bytes_
+
 
 def decode_bytes_stream(stream) -> bytes:
     length = decode_varint_stream(stream)
     return read(stream, length)
+
 
 def read(stream, n: int) -> bytes:
     if isinstance(stream, socket.socket):
@@ -59,6 +67,7 @@ def read(stream, n: int) -> bytes:
     else:
         raise TypeError('Invalid stream type')
 
+
 def read_all(stream) -> bytes:
     data = bytes()
 
@@ -67,10 +76,12 @@ def read_all(stream) -> bytes:
         if not buf: return data
         data += buf
 
+
 def twos_complement(n: int, bits: int) -> int:
     if (n & (1 << (bits - 1))) != 0:
         n = n - (1 << bits)
     return n
+
 
 def minecraft_sha1(server_id: bytes, shared_secret: bytes, public_key: bytes) -> str:
     sha1 = hashlib.sha1()
@@ -82,6 +93,7 @@ def minecraft_sha1(server_id: bytes, shared_secret: bytes, public_key: bytes) ->
     return format(twos_complement(int.from_bytes(sha1.digest(), byteorder='big'), 160), 'x')
 
 # --- Enums ---
+
 
 class State(Enum):
     HANDSHAKING = 0
